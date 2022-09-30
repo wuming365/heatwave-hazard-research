@@ -164,7 +164,7 @@ def mapping(language='en'):
     # to add the title of legend of colorbar in the figure
     fig.text(0.93, 0.88, 'Elevation(m)', fontsize=12)
     
-    plt.show() # or can directly save fig.save
+    plt.show() # or can directly save fig.savefig()
     
 if __name__=="__main__":
     mapping()

@@ -1,5 +1,7 @@
 # Mapping of variables
 
+# Attention: Figure subfigures need a higher version
+
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt

@@ -140,7 +140,7 @@ def calc_torridity_threshold(T_threshold=33):
                 write_img(TI_threshold, TI_threshold_file, im_proj,
                           im_geotrans, turn_path, ndv)
 
-# Combination split_TI' to TI' (nodata ndv)
+# calculate TI' (nodata value in China will make error in calculating HI)
 def calc_TIpie():
     path = r"" # path to store daily TI_threshold 
     split_path = r"" # path to store split raster path because of insufficient computer running memory
@@ -167,3 +167,86 @@ def calc_TIpie():
             out_img = np.nanmedian(Igs, axis=0)
             write_img(out_img, "TI'_" + str(i) + ".tif", im_proj, im_geotrans,
                       r"", ndv)
+            
+# fill the nodata value with max value (nodata value means no MT>=33 in 30 years)
+def calc_TIpie_2():
+    TIpie_2 = r"" # path to store filled TIpie
+    TIs_path = r"" # folder of TIs
+    max_path = r"" # path of max_TI
+    TIs_name = [i for i in os.listdir(TIs_path) if i.endswith(".tif")]
+   
+    TI_mask = os.path.join(TIs_path, TIs_name[0]) # to judge if in China
+    im_data, ndv = openSingleImage(TI_mask)[0], openSingleImage(TI_mask)[-1]
+    mask = im_data != ndv
+    del im_data
+    
+    # calculate max TI of 30 years
+    first = True
+    Max = None
+    with tqdm(range(8)) as t1:
+        for i in t1:
+            t1.set_description_str("Done")
+            # is_first = True
+            Igs = []
+            with tqdm(TIs_name) as t2:
+                for file in t2:
+                    t2.set_description_str("Open")
+                    split_file = os.path.join(split_path,
+                                              file[:-4] + str(i) + ".tif")
+                    if os.path.exists(split_file):
+                        data, im_proj, im_geotrans, _, _, ndv = openSingleImage(
+                            split_file)
+                        Igs.append(data)
+            print("Calculating Max:")
+            Igs = np.array(Igs)
+            max = np.nanmax(Igs, axis=0)
+            write_img(max, "Max_" + str(i) + ".tif", im_proj, im_geotrans,
+                      "I:/dem_chazhi/result", ndv)
+            del Igs
+            del max
+            if first:
+                Max = max
+                first = False
+            else:
+                 Max = np.append(Max, max, axis=1)
+
+    # fill nodata value with Max
+    dataset = gdal.Open(max_path)
+    im_band = dataset.GetRasterBand(1)
+    Max = im_band.ReadAsArray()
+    del dataset
+
+    dataset = gdal.Open(TIpie_copy, GA_Update)
+    im_band = dataset.GetRasterBand(1)
+    im_data = im_band.ReadAsArray()
+
+    (height, width) = im_data.shape
+    for i in tqdm(range(height)):
+        for j in tqdm(range(width)):
+            if mask[i][j] and im_data[i][j] == ndv and Max[i][j] != ndv:
+                im_data[i][j] = Max[i][j]
+    im_band.WriteArray(im_data)
+    del dataset
+    
+# calculate HI by TI and TI'
+def calc_HI():
+    years = np.arange(1990, 2000) # this is a changeable variable based on need of oneself
+    TI_path = r"" # TI folder
+    TIpie_path = r"" # filled TI'
+    output_path = r"" # HI folder
+    TIpie, im_proj, im_geotrans, im_height, im_width, ndv = openSingleImage(
+        TIpie_path)
+    mask = TIpie == ndv
+    TIpie = ma.masked_where(mask, TIpie)
+    for year in years:
+        if not os.path.exists(os.path.join(output_path,
+                                           f"{str(year)}_HIs.tif")):
+            TIs = [
+                os.path.join(TI_path, i) for i in os.listdir(TI_path)
+                if str(year) in i
+            ]
+            TIs = openImages(TIs)[0]
+            hotimg = np.zeros_like(TIs, dtype=np.bool8)
+
+            hotimg[TIs > TIpie] = True
+            hotimg = np.transpose(hotimg)

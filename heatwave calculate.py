@@ -250,3 +250,42 @@ def calc_HI():
 
             hotimg[TIs > TIpie] = True
             hotimg = np.transpose(hotimg)
+			
+			# HWMD
+			longest_duration = np.zeros_like(TIs[0])
+			
+			# create HIs
+			HIs = np.zeros_like(TIs)
+			with tqdm(range(im_width)) as t:
+                for i in t:
+                    for j in range(im_height):
+                        if np.max(hotimg[i][j]) == 0:
+                            continue
+						
+						date = 0 # heatwave duration days so far
+						for k, is_hot in enumerate(hotimg[i][j]):
+                            if is_hot:
+                                sum = 0
+                                HI = 1.2 * (TIs[k][j][i] - TIpie[j][i])
+                                if date >= 1:
+                                    for l in range(date):
+                                        ndi = l + 1
+                                        sum += 0.35 * (
+                                            1 / ndi *
+                                            (TIs[k - ndi][j][i] - TIpie[j][i])
+                                        ) + 0.15 * (1 / ndi)  #1/2=0.5
+                                HI += sum + 1
+                                HIs[k][j][i] = HI
+                                date += 1
+                            else:
+                                date = 0
+			
+			for HI in HIs:
+				HI = ma.masked_where(mask, HI).filled(ndv)			
+			
+			write_img(HIs, f"{str(year)}_HIs.tif", im_proj, im_geotrans,
+                      output_path, ndv)
+            del HIs
+            del TIs
+            del hotimg
+			

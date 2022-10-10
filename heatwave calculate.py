@@ -288,4 +288,197 @@ def calc_HI():
             del HIs
             del TIs
             del hotimg
+
+# calculate heatwave frequency from HI series
+def getHeatWaveFreq(b):
+    if np.max(b) != 0:
+        b = b.astype(np.int32)  # float2int aims to make sure only 0 and 1 in string
+        c = ''.join(str(i) for i in b)
+        d = np.array([len(i) for i in c.split('0')])
+        return len(d[d >= 3])
+    else:
+        return 0
+
+# calculate heatwave characteristics
+def get_hw(HIs_time):
+    b = ma.masked_where(HIs_time < 2.8, HIs_time).filled(0) 
+    b = ma.masked_where(b != 0, b).filled(1) # judge indexs if 1
+    d_hw_3 = np.zeros_like(HIs_time, dtype=np.int16)  # only save 3 days heatwaves
+    c_mean_hw_hi = [] # mean HIs of heatwaves
+	
+    danci_hw = []
+    for k in range(len(b)):
+        if b[k]: # if 1
+            if HIs_time[k] < 6.5:
+                danci_hw.append(1)
+            elif 6.5 <= HIs_time[k] < 10.5:
+                danci_hw.append(2)
+            elif HIs_time[k] >= 10.5:
+                danci_hw.append(3)
+        # when heatwave ends
+	else:
+            hw_duration = len(danci_hw)
+	
+	    # if duration>=3, then calculate heatwave characteristics
+            if hw_duration >= 3:
+                d_hw_3[k - hw_duration:k] = danci_hw
+                m = np.mean(HIs_time[k - hw_duration:k])
+                c_mean_hw_hi.append(m)  # HI of this heatwave is m
+            danci_hw = []
+    # if the end date is end of heatwaves after loop
+    hw_duration = len(danci_hw)
+    if hw_duration >= 3:
+        d_hw_3[-hw_duration:] = danci_hw
+        m = np.mean(HIs_time[-hw_duration:])
+        c_mean_hw_hi.append(m)  
+
+    return d_hw_3, np.array(c_mean_hw_hi)
+
+# calculate all heatwave characteristics
+def summary(HIs_file, out_path, masks, ndv_int):
+	# HIs_file is a tif file with 155 * rows * cols
+	# masks is a ndarray with 155 * rows * cols
+	HIs, im_proj, im_geotrans, im_height, im_width, ndv = openSingleImage(
+        HIs_file)
+	HIs = ma.masked_where(masks, HIs)
+	
+	hw_longgestdays = np.zeros_like(HIs[0], dtype=np.int16) # HWMD
+	hw_fre_mean = np.zeros_like(HIs[0], dtype=np.int16) # HWF
+	d_hw_max = np.zeros_like(HIs[0]) # HWMHI
+	
+	HIs = np.transpose(HIs) # transpose to (cols,rows,n)
+	with tqdm(range(im_width)) as t:
+        for i in t:
+            for j in range(im_height):
+                if not HIs[i][j][0] is ma.masked:
+                    max_HI = np.max(HIs[i][j])
+                    b = ma.masked_where(HIs[i][j] < 2.8, HIs[i][j]).filled(0)
+                    b = ma.masked_where(b != 0, b).filled(1)
+                    fre = getHeatWaveFreq(b)
+                    if max_HI == 0 or fre == 0:  # if all 0 or no heatwaves, then continue
+                        continue
+                    else:
+                        d_hw_3, c_mean_hw = get_hw(
+                            HIs[i][j])
+						
+                        c = ''.join(str(i) for i in d_hw_3)
+                        d = np.array([len(i) for i in c.split('0')])
+                        hw_longgestdays[j][i] = np.max(d) # HWMD
+						hw_fre_mean[j][i] = fre # HWF
+						
+						mask_hw_3 = ma.masked_where(d_hw_3 != 0,
+                                                    d_hw_3).filled(1)
+                        hw_3_HIs = HIs[i][j] * mask_hw_3
+                        hw_3_HIs = np.array(hw_3_HIs[hw_3_HIs != 0])
+						d_hw_max[j][i] = np.max(hw_3_HIs) #HWMHI
+	
+	mask = masks[0]
+	hw_longgestdays = ma.masked_where(mask, hw_longgestdays).filled(ndv_int)
+	hw_fre_mean = ma.masked_where(mask, hw_fre_mean_1).filled(ndv_int)
+	d_hw_max = ma.masked_where(mask, d_hw_max).filled(ndv)
+	
+	write_img(hw_longgestdays, f"{year}_HWMD.tif", im_proj, im_geotrans,
+              out_path, ndv_int)
+	write_img(hw_fre_mean, f"{year}_HWF.tif", im_proj, im_geotrans,
+              out_path, ndv_int)
+	write_img(d_hw_max, f"{year}_HWMHI.tif", im_proj, im_geotrans,
+              out_path, ndv_int)
+
+# calculate average and slope of heatwave characteristics
+def combine(start_year=1990, end_year=2020):
+	dir_path = r""
+	out_path = r""
+	
+	HWFs = [
+        fr"{dir_path}\{year}_HWF.tif"
+        for year in range(start_year, end_year)
+    ]
+	HWMDs = [
+        fr"{dir_path}\{year}_HWMD.tif"
+        for year in range(start_year, end_year)
+    ]
+	HWMHIs = [
+        fr"{dir_path}\{year}_HWMHI.tif"
+        for year in range(start_year, end_year)
+    ]
+	indexs = [HWFs, HWMDs, HWMHIs]
+	for index in indexs:
+        avg_name = "avg_" + "_".join(
+            index[0].split("\\")[-1].split("_")[1:])[:-4] + "_" + str(
+                start_year) + "_" + str(end_year) + ".tif"
+		slope_name = "slope_" + "_".join(
+            index[0].split("\\")[-1].split("_")[1:])[:-4] + "_" + str(
+                start_year) + "_" + str(end_year) + ".tif"
+		
+		# calculate average 
+		if not os.path.exists(os.path.join(out_path, avg_name)):
+            Igs, im_geotrans, im_proj, ndv = openImages(index)
+            Igs = ma.masked_equal(Igs, ndv)
+
+            avg_data = np.mean(Igs, axis=0).filled(ndv)
+            write_img(avg_data, avg_name, im_proj, im_geotrans, out_path, ndv)
+		
+		# calcualate slope
+		if not os.path.exists(os.path.join(out_path, filename)):
+            Igs, im_geotrans, im_proj, ndv = openImages(index)
+            slope_data = np.full_like(Igs[0], ndv, dtype=float)
+            height = slope_data.shape[0]
+            width = slope_data.shape[1]
+            Igs = ma.masked_where(Igs == ndv, Igs)
+            Igs = np.transpose(Igs)
+
+            import scipy.stats as st
+            from tqdm import trange
+            for i in trange(width):
+                for j in range(height):
+                    if Igs[i][j][0] is not ma.masked:
+                        y = Igs[i][j]
+                        if ma.masked in y:
+                            y = np.array([i for i in y if i is not ma.masked])
+                        x = list(range(len(y)))
+                        if len(y) < 10:
+                            continue
+                        slope, intercept, r_value, p_value, std_err = st.linregress(
+                            x, y)
+                        if p_value < 0.05:
+                            slope_data[j][i] = slope
+            write_img(slope_data, slope_name, im_proj, im_geotrans, out_path,
+                      ndv)
+            del Igs
 			
+if __name__ == "__main__":
+    # data_path = r""
+    # tems_path = f""
+    # rhus_path = f""
+    # tem_files = [
+    #     f"{tems_path}/{i}" for i in os.listdir(tems_path) if i.endswith("tif")
+
+    # ]
+    # HIs_path = r""
+    # out_path = r""
+    # HIs_files = [
+    #     f"{HIs_path}/{i}" for i in os.listdir(HIs_path) if i.endswith("tif")
+    # ]
+    # HIs_files = HIs_files[:10]
+    # ndv_int = -32768
+    # mm, _, _, _, _, ndv = openSingleImage(r"G:\dem_chazhi\result\TI'_copy.tif")
+    # mask = mm == ndv
+    # masks = []
+    # for i in range(153):
+    #     masks.append(mask)
+    # process_num = 1
+    # pool = Pool(process_num)
+    # tmp = []
+    # for i in range(len(HIs_files)):
+    #     res = pool.apply_async(func=summary,
+    #                            args=(HIs_files[i], out_path, masks, ndv_int),
+    #                            callback=None)
+    # pool.close()
+    # pool.join()
+    # calc_the_heat_threshold()
+    # calc_TIs()
+    # calc_TIpie()
+    # calc_TIpie_2()
+    # calc_HI()
+    # calc_monthTI()
+    combine()

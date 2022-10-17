@@ -200,7 +200,7 @@ def mapping(img_path,
     # size of one sub-figure is (12.5, 6.67)
     nums = len(title_keys)
     rows = int(nums/2) + 1
-    cols = nums>2?2:1
+    cols = 2 if nums>2 else 1
     
     fig = plt.figure(
     figsize=(rows * 12.5, cols * 10 / 3), 

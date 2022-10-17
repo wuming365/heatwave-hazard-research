@@ -67,7 +67,7 @@ def mapping(img_path,
         
         # to show China polygon file
         mapn.readshapefile(china_path, name='china')
-        # matplotlib.collections.PatchCollection can fill the polygon with setting color, but readshapefile() can only set boundary of polygon, which will create gaps           where there is no data. e.g. Taiwan, Hongkong
+        # matplotlib.collections.PatchCollection can fill the polygon with setting color, but readshapefile() can only set boundary of polygon, which will create gaps where there is no data. e.g. Taiwan, Hongkong
         p2 = PatchCollection(
             [Polygon(i) for i in np.array(mapn.china, dtype=object)],
             edgecolors='black',
@@ -150,16 +150,16 @@ def mapping(img_path,
             if ticks[-1] > data_max:
                 ticks = np.delete(ticks, -1)
         
-        # create the colorbar
-        colorbar = mapn.colorbar(cntr, size='3.5%', ticks=ticks,fig=sfig)
-        colorbar.ax.tick_params(labelsize='21')
+            # create the colorbar
+            colorbar = mapn.colorbar(cntr, size='3.5%', ticks=ticks,fig=sfig)
+            colorbar.ax.tick_params(labelsize='21')
         
-        # reset the ticks of colorbar
-        if "hazard" in key and "Yin" not in key:
-            newticks=["Low","Medium low","Middle","Medium high","High"]
-            if "slope" in key:
-                newticks=["Decreased", "Slightly decreased", "Basically unchanged","Slightly increased", "Increased"]
-            colorbar.set_ticklabels(newticks)
+            # reset the ticks of colorbar
+            if "hazard" in key and "Yin" not in key:
+                newticks=["Low","Medium low","Middle","Medium high","High"]
+                if "slope" in key:
+                    newticks=["Decreased", "Slightly decreased", "Basically unchanged","Slightly increased", "Increased"]
+                colorbar.set_ticklabels(newticks)
             
         del data
         del ds
